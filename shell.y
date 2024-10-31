@@ -80,17 +80,27 @@ command_word:
 	;
 
 iomodifier_opt:
-	GREAT WORD {
-		printf("   Yacc: insert output \"%s\"\n", $2);
-		Command::_currentCommand._outFile = $2;
+	iomodifier_opt GREAT WORD {
+		printf("   Yacc: insert output \"%s\"\n", $3);
+		Command::_currentCommand._outFile = $3;
 	}
-	| LESS WORD {
-		printf("   Yacc: insert input \"%s\"\n", $2);
-		Command::_currentCommand._inputFile = $2;
+	| iomodifier_opt LESS WORD {
+		printf("   Yacc: insert input \"%s\"\n", $3);
+		Command::_currentCommand._inputFile = $3;
 	}
-	| APPEND WORD {
-		printf("   Yacc: insert append \"%s\"\n", $2);
-		Command::_currentCommand._outFile = $2;
+	| iomodifier_opt APPEND WORD {
+		printf("   Yacc: insert append \"%s\"\n", $3);
+		Command::_currentCommand._outFile = $3;
+		Command::_currentCommand._append = 1;
+	}
+	| iomodifier_opt AMPAPPEND WORD {
+		printf("   Yacc: insert error append \"%s\"\n", $3);
+		Command::_currentCommand._errFile = $3;
+		Command::_currentCommand._append = 1;
+	}
+	| iomodifier_opt GREATAMP WORD {
+		printf("   Yacc: insert output and error \"%s\"\n", $3);
+		Command::_currentCommand._errFile = $3;
 	}
 	| /* can be empty */
 	;
