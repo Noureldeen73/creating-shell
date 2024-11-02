@@ -13,27 +13,22 @@
 
 void insertLog(int pid)
 {
-	// Open the log file in append mode
 	int log_fd = open("termination_log.txt", O_WRONLY | O_APPEND | O_CREAT, 0666);
 	if (log_fd == -1)
 	{
 		perror("open log file");
 		return;
 	}
-	// Get the current time for the log entry
 
 	time_t now = time(NULL);
 	char *timestamp = ctime(&now);
-	timestamp[strlen(timestamp) - 1] = '\0'; // Remove newline from timestamp
+	timestamp[strlen(timestamp) - 1] = '\0';
 
-	// Format the log message
 	char log_entry[256];
 	snprintf(log_entry, sizeof(log_entry), "Child with PID %d terminated at %s\n", pid, timestamp);
 
-	// Write to the log file
 	write(log_fd, log_entry, strlen(log_entry));
 
-	// Close the log file
 	close(log_fd);
 }
 
@@ -41,7 +36,6 @@ void sigchld_handler(int signum)
 {
 	int status;
 	pid_t pid;
-	// Reap all zombie children
 	while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
 	{
 		insertLog(pid);

@@ -1,6 +1,7 @@
 
 #ifndef command_h
 #define command_h
+#include <string.h>
 
 // Command Data Structure
 struct SimpleCommand

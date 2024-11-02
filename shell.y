@@ -1,3 +1,4 @@
+
 %union {
 	char *string_val;
 }
@@ -12,8 +13,11 @@ extern "C" {
 }
 #define yylex yylex
 #include <stdio.h>
+#include <stdlib.h>
+#include <string>
 #include "command.h"
 #include <unistd.h>
+#include<bits/stdc++.h>
 #include <cstring>
 %}
 
@@ -41,8 +45,18 @@ change_directory:
 			}
 			else
 			{
-				printf("   Yacc: Change directory to %s\n", $2);
-				Command::_currentCommand._currentDir = $2;
+				char newDir[1024];
+				if (strcmp($2, "..") == 0) {
+					char *lastSlash = strrchr(Command::_currentCommand._currentDir, '/');
+					if (lastSlash != NULL) {
+						*lastSlash = '\0';
+					}
+					snprintf(newDir, sizeof(newDir), "%s", Command::_currentCommand._currentDir);
+				} else {
+					snprintf(newDir, sizeof(newDir), "%s/%s", Command::_currentCommand._currentDir, $2);
+				}
+				Command::_currentCommand._currentDir = strdup(newDir);
+				printf("   Yacc: Change directory to %s\n", Command::_currentCommand._currentDir);
 				Command::_currentCommand.prompt();
 			}
 		}
