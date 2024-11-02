@@ -6,8 +6,47 @@
 #include <string.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <cerrno>
+#include <time.h>
 
 #include "command.h"
+
+void insertLog(int pid)
+{
+	// Open the log file in append mode
+	int log_fd = open("termination_log.txt", O_WRONLY | O_APPEND | O_CREAT, 0666);
+	if (log_fd == -1)
+	{
+		perror("open log file");
+		return;
+	}
+	// Get the current time for the log entry
+
+	time_t now = time(NULL);
+	char *timestamp = ctime(&now);
+	timestamp[strlen(timestamp) - 1] = '\0'; // Remove newline from timestamp
+
+	// Format the log message
+	char log_entry[256];
+	snprintf(log_entry, sizeof(log_entry), "Child with PID %d terminated at %s\n", pid, timestamp);
+
+	// Write to the log file
+	write(log_fd, log_entry, strlen(log_entry));
+
+	// Close the log file
+	close(log_fd);
+}
+
+void sigchld_handler(int signum)
+{
+	int status;
+	pid_t pid;
+	// Reap all zombie children
+	while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+	{
+		insertLog(pid);
+	}
+}
 
 SimpleCommand::SimpleCommand()
 {
@@ -34,7 +73,11 @@ void SimpleCommand::insertArgument(char *argument)
 
 	_numberOfArguments++;
 }
-
+void ignore(int signum)
+{
+	printf("please use exit function\n");
+	Command::_currentCommand.prompt();
+}
 Command::Command()
 {
 	// Create available space for one simple command
@@ -85,12 +128,7 @@ void Command::clear()
 	{
 		free(_inputFile);
 	}
-
-	if (_errFile)
-	{
-		free(_errFile);
-	}
-
+	_errFile = false;
 	_numberOfSimpleCommands = 0;
 	_outFile = 0;
 	_inputFile = 0;
@@ -120,16 +158,9 @@ void Command::print()
 	printf("\n\n");
 	printf("  Output       Input        Error        Background\n");
 	printf("  ------------ ------------ ------------ ------------\n");
-	if (_errFile)
-	{
-		printf("  %-12s %-12s %-12s %-12s\n", _errFile,
-			   _inputFile ? _inputFile : "default", _errFile ? _errFile : "default",
-			   _background ? "YES" : "NO");
-	}
-	else
-		printf("  %-12s %-12s %-12s %-12s\n", _outFile ? _outFile : "default",
-			   _inputFile ? _inputFile : "default", _errFile ? _errFile : "default",
-			   _background ? "YES" : "NO");
+	printf("  %-12s %-12s %-12s %-12s\n", _outFile ? _outFile : "default",
+		   _inputFile ? _inputFile : "default", _errFile ? _outFile : "default",
+		   _background ? "YES" : "NO");
 	printf("\n\n");
 }
 
@@ -149,9 +180,23 @@ void Command::execute()
 	// For every simple command fork a new process
 	// Setup i/o redirection
 	// and call exec
+	int pid;
+	int fdpipe[2];
+	int defaultin = dup(0);
+	int defaultout = dup(1);
+	int defaulterr = dup(2);
+	int lastInput = defaultin;
 	for (int i = 0; i < _numberOfSimpleCommands; i++)
 	{
-		int pid = fork();
+		if (i < _numberOfSimpleCommands - 1)
+		{
+			if (pipe(fdpipe) == -1)
+			{
+				perror("pipe");
+				exit(1);
+			}
+		}
+		pid = fork();
 		if (pid == -1)
 		{
 			perror("fork");
@@ -159,10 +204,7 @@ void Command::execute()
 		}
 		if (pid == 0)
 		{
-			int defaultin = dup(0);
-			int defaultout = dup(1);
-			int defaulterr = dup(2);
-			if (_inputFile)
+			if (i == 0 && _inputFile)
 			{
 				int fd = open(_inputFile, O_RDONLY);
 				dup2(fd, 0);
@@ -170,65 +212,63 @@ void Command::execute()
 			}
 			else
 			{
-				dup2(defaultin, 0);
+				dup2(lastInput, 0);
 			}
-			if (_outFile)
+			if (i == _numberOfSimpleCommands - 1)
 			{
-				if (_append)
+				if (_outFile)
 				{
-					int fd = open(_outFile, O_CREAT | O_WRONLY | O_APPEND, 0644);
-					dup2(fd, 1);
-					close(fd);
+					if (_append)
+					{
+						int fd = open(_outFile, O_WRONLY | O_APPEND | O_CREAT, 0666);
+						if (_errFile)
+							dup2(fd, 2);
+						dup2(fd, 1);
+						close(fd);
+					}
+					else
+					{
+						int fd = open(_outFile, O_WRONLY | O_TRUNC | O_CREAT, 0666);
+						if (_errFile)
+							dup2(fd, 2);
+						dup2(fd, 1);
+						close(fd);
+					}
 				}
 				else
 				{
-					int fd = open(_outFile, O_CREAT | O_WRONLY | O_TRUNC, 0644);
-					dup2(fd, 1);
-					close(fd);
+					dup2(defaultout, 1);
+					dup2(defaulterr, 2);
 				}
 			}
 			else
 			{
-				dup2(defaultout, 1);
-			}
-			if (_errFile)
-			{
-				if (_append)
-				{
-					int fd = open(_errFile, O_CREAT | O_WRONLY | O_APPEND, 0644);
-					dup2(fd, 2);
-					close(fd);
-				}
-				else
-				{
-					int fd = open(_errFile, O_CREAT | O_WRONLY | O_TRUNC, 0644);
-					dup2(fd, 2);
-					close(fd);
-				}
-			}
-			else
-			{
-				dup2(defaulterr, 2);
+				dup2(fdpipe[1], 1);
+				close(fdpipe[0]);
 			}
 			execvp(_simpleCommands[i]->_arguments[0], _simpleCommands[i]->_arguments);
 			perror("execvp");
-			_exit(1);
-
-			// Restore in/out defaults
-			dup2(defaultin, 0);
-			dup2(defaultout, 1);
-			dup2(defaulterr, 2);
-
-			close(defaultin);
-			close(defaultout);
-			close(defaulterr);
+			kill(pid, SIGTERM);
 		}
-		if (_background)
+		else
 		{
-			// do not wait for the child process
-			continue;
+			if (lastInput != defaultin)
+				close(lastInput);
+			lastInput = fdpipe[0];
+			close(fdpipe[1]);
 		}
-		waitpid(pid, 0, 0);
+	}
+	dup2(defaultin, 0);
+	dup2(defaultout, 1);
+	dup2(defaulterr, 2);
+	close(defaultin);
+	close(defaultout);
+	close(defaulterr);
+	if (_background == 0)
+	{
+		int status;
+		waitpid(pid, NULL, 0);
+		insertLog(pid);
 	}
 	// Clear to prepare for next command
 	clear();
@@ -241,7 +281,12 @@ void Command::execute()
 
 void Command::prompt()
 {
-	printf("myshell>");
+	printf("myshell");
+	if (_currentDir != NULL)
+	{
+		printf(":%s", _currentDir);
+	}
+	printf("> ");
 	fflush(stdout);
 }
 
@@ -252,6 +297,16 @@ int yyparse(void);
 
 int main()
 {
+	if (signal(SIGCHLD, sigchld_handler) == SIG_ERR)
+	{
+		perror("signal SIGCHLD");
+		exit(1);
+	}
+	if (signal(SIGINT, ignore) == SIG_ERR)
+	{
+		perror("signal SIGINT");
+		exit(1);
+	}
 	Command::_currentCommand.prompt();
 	yyparse();
 	return 0;

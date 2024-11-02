@@ -3,7 +3,7 @@
 }
 
 %token <string_val> WORD
-%token NOTOKEN GREAT NEWLINE LESS PIPE APPEND AMP AMPAPPEND GREATAMP
+%token NOTOKEN GREAT NEWLINE LESS PIPE APPEND AMP AMPAPPEND GREATAMP EXIT CD
 
 %{
 extern "C" {
@@ -13,6 +13,8 @@ extern "C" {
 #define yylex yylex
 #include <stdio.h>
 #include "command.h"
+#include <unistd.h>
+#include <cstring>
 %}
 
 %%
@@ -28,9 +30,29 @@ commands:
 
 command:
 	simple_command
+	| change_directory
 	;
-// ls aaaa | grep | cat > a.txt
-
+change_directory:
+	CD WORD NEWLINE {
+			if(chdir($2) == -1)
+			{
+				printf("   Yacc: Directory not found\n");
+				Command::_currentCommand.prompt();
+			}
+			else
+			{
+				printf("   Yacc: Change directory to %s\n", $2);
+				Command::_currentCommand._currentDir = $2;
+				Command::_currentCommand.prompt();
+			}
+		}
+	| CD NEWLINE {
+		printf("   Yacc: Change directory to HOME\n");
+		chdir(getenv("HOME"));
+		Command::_currentCommand._currentDir = getenv("HOME");
+		Command::_currentCommand.prompt();
+	}
+	;
 simple_command:
 	command_and_args piping iomodifier_opt amp NEWLINE {
 		printf("   Yacc: Execute command\n");
@@ -38,18 +60,20 @@ simple_command:
 	}
 	| NEWLINE
 	| error NEWLINE { yyerrok; }
+	| EXIT NEWLINE {
+		printf("   Yacc: GOODBYE!\n");
+		exit(0);
+	}
 	;
 piping:
 	PIPE piped_command {
 		printf("   Yacc: insert pipe\n");
-		// Command::_currentCommand.insertPipeCommand(Command::_currentSimpleCommand);
 	} 
 	| /* can be empty */
 	;
 
 piped_command:
 command_and_args piping{
-		// Command::_currentCommand.insertPipeCommand(Command::_currentSimpleCommand);
 	}
 	;
 
@@ -95,22 +119,25 @@ iomodifier_opt:
 	}
 	| iomodifier_opt AMPAPPEND WORD {
 		printf("   Yacc: insert error append \"%s\"\n", $3);
-		Command::_currentCommand._errFile = $3;
+		Command::_currentCommand._errFile = true;
+		Command::_currentCommand._outFile = $3;
 		Command::_currentCommand._append = 1;
 	}
 	| iomodifier_opt GREATAMP WORD {
 		printf("   Yacc: insert output and error \"%s\"\n", $3);
-		Command::_currentCommand._errFile = $3;
+		Command::_currentCommand._errFile = true;
+		Command::_currentCommand._outFile = $3;
 	}
 	| /* can be empty */
 	;
-
 amp:
 	AMP {
 		printf("   Yacc: insert background\n");
-		Command::_currentCommand._background = true;
+		Command::_currentCommand._background = 1;
 	}
-	| /* can be empty */
+	| /* can be empty */{
+		Command::_currentCommand._background = 0;
+	}
 	;
 
 %%

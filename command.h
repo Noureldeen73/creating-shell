@@ -23,8 +23,9 @@ struct Command
 	SimpleCommand **_simpleCommands;
 	char *_outFile;
 	char *_inputFile;
-	char *_errFile;
-	int _background;
+	char *_currentDir = NULL;
+	bool _errFile;
+	int _background = 0;
 	int _append;
 
 	void prompt();
@@ -34,9 +35,10 @@ struct Command
 
 	Command();
 	void insertSimpleCommand(SimpleCommand *simpleCommand);
-
 	static Command _currentCommand;
 	static SimpleCommand *_currentSimpleCommand;
 };
+void sigchld_handler(int signum);
+void ignore(int signum);
 
 #endif
