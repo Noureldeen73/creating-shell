@@ -41,5 +41,6 @@ struct Command
 };
 void sigchld_handler(int signum);
 void ignore(int signum);
+char *remove_backslashes(const char *str);
 
 #endif

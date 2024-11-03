@@ -38,7 +38,7 @@ command:
 	;
 change_directory:
 	CD WORD NEWLINE {
-			if(chdir($2) == -1)
+			if(chdir(remove_backslashes($2)) == -1)
 			{
 				printf("   Yacc: Directory not found\n");
 				Command::_currentCommand.prompt();
@@ -46,14 +46,24 @@ change_directory:
 			else
 			{
 				char newDir[1024];
-				if (strcmp($2, "..") == 0) {
+				if(strcmp($2, ".") == 0)
+				{
+					snprintf(newDir, sizeof(newDir), "%s", Command::_currentCommand._currentDir);
+				}
+				else if (strcmp($2, "..") == 0) {
 					char *lastSlash = strrchr(Command::_currentCommand._currentDir, '/');
 					if (lastSlash != NULL) {
 						*lastSlash = '\0';
 					}
 					snprintf(newDir, sizeof(newDir), "%s", Command::_currentCommand._currentDir);
 				} else {
-					snprintf(newDir, sizeof(newDir), "%s/%s", Command::_currentCommand._currentDir, $2);
+					char *cleaned = remove_backslashes($2);
+					for(int i = 0; i < strlen(cleaned); i++)
+					{
+						newDir[i] = cleaned[i];
+					}
+					snprintf(newDir, sizeof(newDir), "%s/%s", Command::_currentCommand._currentDir, remove_backslashes($2));
+					free(cleaned);
 				}
 				Command::_currentCommand._currentDir = strdup(newDir);
 				printf("   Yacc: Change directory to %s\n", Command::_currentCommand._currentDir);
@@ -105,7 +115,8 @@ arg_list:
 argument:
 	WORD {
 		printf("   Yacc: insert argument \"%s\"\n", $1);
-		Command::_currentSimpleCommand->insertArgument($1);
+		char *newArg = remove_backslashes($1);
+		Command::_currentSimpleCommand->insertArgument(newArg);
 	}
 	;
 

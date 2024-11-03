@@ -11,9 +11,29 @@
 
 #include "command.h"
 
-void insertLog(int pid)
+char *remove_backslashes(const char *str)
 {
-	int log_fd = open("termination_log.txt", O_WRONLY | O_APPEND | O_CREAT, 0666);
+	size_t len = strlen(str);
+	char *result = (char *)malloc(len + 1); // Allocate memory for the new string
+	char *dest = result;
+
+	for (const char *src = str; *src != '\0'; ++src)
+	{
+		if (*src == '\\' && (*(src + 1) == ' '))
+		{
+			// Skip the backslash and copy the space
+			++src;
+		}
+		*dest++ = *src;
+	}
+	*dest = '\0'; // Null-terminate the new string
+
+	return result;
+}
+
+void insertLog(int pid, int status)
+{
+	int log_fd = open("/home/noureldeen/Data/term 7/Operating systmes/Labs/Lab3 assignment/lab3-src/shell.log", O_WRONLY | O_APPEND | O_CREAT, 0666);
 	if (log_fd == -1)
 	{
 		perror("open log file");
@@ -25,7 +45,7 @@ void insertLog(int pid)
 	timestamp[strlen(timestamp) - 1] = '\0';
 
 	char log_entry[256];
-	snprintf(log_entry, sizeof(log_entry), "Child with PID %d terminated at %s\n", pid, timestamp);
+	snprintf(log_entry, sizeof(log_entry), "Child with PID %d terminated with status %d at %s\n", pid, status, timestamp);
 
 	write(log_fd, log_entry, strlen(log_entry));
 
@@ -36,9 +56,10 @@ void sigchld_handler(int signum)
 {
 	int status;
 	pid_t pid;
-	while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+	while ((pid = waitpid(-1, &status, WNOHANG)) > 0) // msh bykhosh henaaa
 	{
-		insertLog(pid);
+		printf("pid: %d\n", pid);
+		insertLog(pid, status);
 	}
 }
 
@@ -48,6 +69,7 @@ SimpleCommand::SimpleCommand()
 	_numberOfAvailableArguments = 5;
 	_numberOfArguments = 0;
 	_arguments = (char **)malloc(_numberOfAvailableArguments * sizeof(char *));
+	signal(SIGCHLD, sigchld_handler);
 }
 
 void SimpleCommand::insertArgument(char *argument)
@@ -242,7 +264,7 @@ void Command::execute()
 			}
 			execvp(_simpleCommands[i]->_arguments[0], _simpleCommands[i]->_arguments);
 			perror("execvp");
-			kill(pid, SIGTERM);
+			exit(0);
 		}
 		else
 		{
@@ -250,6 +272,12 @@ void Command::execute()
 				close(lastInput);
 			lastInput = fdpipe[0];
 			close(fdpipe[1]);
+			if (!_background)
+			{
+				int status;
+				insertLog(pid, status);
+				waitpid(pid, &status, 0);
+			}
 		}
 	}
 	dup2(defaultin, 0);
@@ -258,12 +286,6 @@ void Command::execute()
 	close(defaultin);
 	close(defaultout);
 	close(defaulterr);
-	if (_background == 0)
-	{
-		int status;
-		waitpid(pid, NULL, 0);
-		insertLog(pid);
-	}
 	// Clear to prepare for next command
 	clear();
 
@@ -291,16 +313,7 @@ int yyparse(void);
 
 int main()
 {
-	if (signal(SIGCHLD, sigchld_handler) == SIG_ERR)
-	{
-		perror("signal SIGCHLD");
-		exit(1);
-	}
-	if (signal(SIGINT, ignore) == SIG_ERR)
-	{
-		perror("signal SIGINT");
-		exit(1);
-	}
+	signal(SIGINT, ignore);
 	Command::_currentCommand.prompt();
 	yyparse();
 	return 0;
